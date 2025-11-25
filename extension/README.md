@@ -4,13 +4,33 @@ This Chrome extension allows testers to add contextual feedback on any web appli
 
 ## Features
 
-- Works on ANY website, bypassing iframe OAuth restrictions
-- Click on any element to add comments
-- Automatic DOM selector recording
-- Screenshot capture
-- Real-time sync with CommentSync dashboard
-- Visual element highlighting
-- Session management
+### Core Functionality
+- ✅ Works on ANY website, bypassing iframe OAuth restrictions
+- ✅ Click on any element to add comments
+- ✅ Automatic DOM selector recording
+- ✅ Screenshot capture with scroll position
+- ✅ Real-time sync with CommentSync dashboard
+- ✅ Visual element highlighting
+
+### Full Feature Parity with Web App
+- ✅ View all existing comments as pins on page
+- ✅ Reply to comment threads
+- ✅ Edit your own comments
+- ✅ Delete your own comments
+- ✅ Resolve/reopen threads
+- ✅ Color-coded pins (blue = open, green = resolved)
+- ✅ Comment count badges on pins
+- ✅ Screenshot preview in thread viewer
+
+### Security
+- ✅ Workspace-based app filtering
+- ✅ Only shows apps you have access to
+- ✅ Author-only edit/delete permissions
+
+### Smart Navigation
+- ✅ Auto-navigates to app URL when selected
+- ✅ Session management
+- ✅ Persistent authentication
 
 ## Installation
 
@@ -54,15 +74,34 @@ function openDashboard(e) {
 
 ### For Testers:
 
+**Initial Setup:**
 1. Click the CommentSync extension icon
-2. Sign in with your CommentSync account
-3. Select the app you want to test
-4. Click "Start Recording"
-5. Navigate to the target application (e.g., apps.osmos.ai)
-6. Log in to the target app normally (OAuth works!)
-7. Click on any element to add comments
-8. Fill in feedback and click Submit
-9. Comments are automatically saved to CommentSync
+2. Sign in with your CommentSync account credentials
+3. Select the app you want to test from the dropdown
+4. Extension automatically navigates to the app's URL
+5. Click "Start Recording" to activate commenting
+
+**Adding New Comments:**
+1. Click on any element on the page
+2. Fill in your feedback in the comment widget
+3. Click Submit
+4. Comment is saved instantly
+
+**Viewing & Managing Comments:**
+1. Existing comments appear as pins on the page
+2. Blue pins = open threads, Green pins = resolved threads
+3. Number badge shows comment count
+4. Click any pin to:
+   - View all comments in the thread
+   - Reply to the conversation
+   - Edit/delete your own comments
+   - Resolve or reopen the thread
+
+**Quick Tips:**
+- The page works normally - OAuth, login flows all work
+- Comments sync in real-time with the dashboard
+- You can only edit/delete your own comments
+- Resolved threads turn green automatically
 
 ### For Authors/Product Owners:
 

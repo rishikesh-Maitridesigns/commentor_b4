@@ -89,18 +89,38 @@ async function handleLogout() {
 
 async function loadApps() {
   try {
-    const result = await chrome.storage.local.get('authToken');
+    const result = await chrome.storage.local.get(['authToken', 'userId']);
 
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/apps?select=*`, {
+    const workspaceResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/workspace_members?user_id=eq.${result.userId}&select=workspace_id`, {
       headers: {
         'Authorization': `Bearer ${result.authToken}`,
         'apikey': SUPABASE_ANON_KEY
       }
     });
 
-    if (!response.ok) throw new Error('Failed to load apps');
+    if (!workspaceResponse.ok) throw new Error('Failed to load workspaces');
+    const workspaces = await workspaceResponse.json();
+    const workspaceIds = workspaces.map(w => w.workspace_id);
 
-    apps = await response.json();
+    if (workspaceIds.length === 0) {
+      apps = [];
+      const select = document.getElementById('app-select');
+      select.innerHTML = '<option value="">No apps available</option>';
+      return;
+    }
+
+    const appsResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/apps?workspace_id=in.(${workspaceIds.join(',')})&select=*&is_active=eq.true`, {
+      headers: {
+        'Authorization': `Bearer ${result.authToken}`,
+        'apikey': SUPABASE_ANON_KEY
+      }
+    });
+
+    if (!appsResponse.ok) throw new Error('Failed to load apps');
+
+    apps = await appsResponse.json();
 
     const select = document.getElementById('app-select');
     select.innerHTML = '<option value="">-- Select an app --</option>';
@@ -109,10 +129,26 @@ async function loadApps() {
       const option = document.createElement('option');
       option.value = app.id;
       option.textContent = app.name;
+      option.dataset.baseUrl = app.base_url;
       select.appendChild(option);
     });
+
+    select.addEventListener('change', handleAppSelect);
   } catch (error) {
     showError('Failed to load apps: ' + error.message);
+  }
+}
+
+async function handleAppSelect(event) {
+  const select = event.target;
+  const selectedOption = select.options[select.selectedIndex];
+  const baseUrl = selectedOption.dataset.baseUrl;
+
+  if (baseUrl) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && !tab.url.startsWith(baseUrl)) {
+      await chrome.tabs.update(tab.id, { url: baseUrl });
+    }
   }
 }
 

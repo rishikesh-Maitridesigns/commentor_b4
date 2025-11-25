@@ -2,6 +2,119 @@ let isCommentSyncActive = false;
 let selectedElement = null;
 let commentWidget = null;
 let highlightOverlay = null;
+let existingThreads = [];
+let commentPins = [];
+let activeSession = null;
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'SESSION_ACTIVE') {
+    activeSession = message.session;
+    isCommentSyncActive = true;
+    loadExistingComments();
+    document.body.style.cursor = 'crosshair';
+    sendResponse({ success: true });
+  }
+
+  if (message.type === 'SESSION_STOPPED') {
+    isCommentSyncActive = false;
+    activeSession = null;
+    clearAllPins();
+    document.body.style.cursor = '';
+    sendResponse({ success: true });
+  }
+});
+
+async function loadExistingComments() {
+  if (!activeSession) return;
+
+  try {
+    const result = await chrome.storage.local.get(['authToken', 'supabaseUrl']);
+    const apiUrl = `${result.supabaseUrl}/rest/v1`;
+    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3dWl6a2xwZ3F0a25qc3NubmhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwNTkxMDAsImV4cCI6MjA3OTYzNTEwMH0.kg7wXyXubuMY0_K_BQmOH5z6awwMWEhg0jChk3cfL8g';
+
+    const threadsResponse = await fetch(
+      `${apiUrl}/threads?app_id=eq.${activeSession.appId}&page_url=eq.${encodeURIComponent(window.location.href)}&select=*,comments(*)`,
+      {
+        headers: {
+          'Authorization': `Bearer ${result.authToken}`,
+          'apikey': anonKey
+        }
+      }
+    );
+
+    if (threadsResponse.ok) {
+      existingThreads = await threadsResponse.json();
+      displayCommentPins();
+    }
+  } catch (error) {
+    console.error('Failed to load existing comments:', error);
+  }
+}
+
+function displayCommentPins() {
+  clearAllPins();
+
+  existingThreads.forEach(thread => {
+    if (!thread.position_data) return;
+
+    const pos = typeof thread.position_data === 'string'
+      ? JSON.parse(thread.position_data)
+      : thread.position_data;
+
+    const scrollX = pos.scrollX || 0;
+    const scrollY = pos.scrollY || 0;
+
+    const pinX = (pos.x || 0) - scrollX;
+    const pinY = (pos.y || 0) - scrollY;
+
+    const pin = document.createElement('div');
+    pin.className = 'commentsync-pin';
+    pin.dataset.threadId = thread.id;
+    pin.style.cssText = `
+      position: absolute;
+      left: ${pinX}px;
+      top: ${pinY}px;
+      width: 32px;
+      height: 32px;
+      background: ${thread.status === 'resolved' ? '#10B981' : '#3B82F6'};
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 999997;
+      border: 2px solid white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      transition: transform 0.2s;
+    `;
+    pin.textContent = thread.comments?.length || '1';
+
+    pin.addEventListener('mouseenter', () => {
+      pin.style.transform = 'scale(1.2)';
+    });
+
+    pin.addEventListener('mouseleave', () => {
+      pin.style.transform = 'scale(1)';
+    });
+
+    pin.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showThreadViewer(thread);
+    });
+
+    document.body.appendChild(pin);
+    commentPins.push(pin);
+  });
+}
+
+function clearAllPins() {
+  commentPins.forEach(pin => pin.remove());
+  commentPins = [];
+}
 
 function getOptimalSelector(element) {
   if (element.id) {
@@ -48,8 +161,8 @@ function createHighlightOverlay() {
     background: rgba(59, 130, 246, 0.1);
     pointer-events: none;
     z-index: 999998;
-    transition: all 0.1s ease;
-    display: none;
+    border-radius: 4px;
+    transition: all 0.2s;
   `;
   document.body.appendChild(overlay);
   return overlay;
@@ -61,11 +174,11 @@ function highlightElement(element) {
   }
 
   const rect = element.getBoundingClientRect();
-  highlightOverlay.style.display = 'block';
-  highlightOverlay.style.top = `${rect.top + window.scrollY}px`;
   highlightOverlay.style.left = `${rect.left + window.scrollX}px`;
+  highlightOverlay.style.top = `${rect.top + window.scrollY}px`;
   highlightOverlay.style.width = `${rect.width}px`;
   highlightOverlay.style.height = `${rect.height}px`;
+  highlightOverlay.style.display = 'block';
 }
 
 function hideHighlight() {
@@ -74,9 +187,39 @@ function hideHighlight() {
   }
 }
 
-function createCommentWidget(x, y, element) {
+document.addEventListener('mouseover', (e) => {
+  if (!isCommentSyncActive || commentWidget) return;
+
+  const target = e.target;
+  if (target.closest('#commentsync-widget') ||
+      target.closest('.commentsync-pin') ||
+      target.closest('.commentsync-thread-viewer')) {
+    return;
+  }
+
+  highlightElement(target);
+  selectedElement = target;
+});
+
+document.addEventListener('click', (e) => {
+  if (!isCommentSyncActive || commentWidget) return;
+
+  const target = e.target;
+  if (target.closest('#commentsync-widget') ||
+      target.closest('.commentsync-pin') ||
+      target.closest('.commentsync-thread-viewer')) {
+    return;
+  }
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  showCommentWidget(target, e.pageX, e.pageY);
+}, true);
+
+function showCommentWidget(element, x, y) {
   if (commentWidget) {
-    commentWidget.remove();
+    closeWidget();
   }
 
   const widget = document.createElement('div');
@@ -127,7 +270,7 @@ function createCommentWidget(x, y, element) {
   widget.querySelector('#commentsync-cancel').onclick = closeWidget;
   widget.querySelector('#commentsync-submit').onclick = () => submitComment(element, textarea.value);
 
-  return widget;
+  commentWidget = widget;
 }
 
 function closeWidget() {
@@ -166,12 +309,306 @@ async function submitComment(element, text) {
         if (response.success) {
           showNotification('Comment saved successfully!', 'success');
           closeWidget();
+          loadExistingComments();
         } else {
           showNotification('Failed to save comment: ' + response.error, 'error');
         }
       }
     );
   });
+}
+
+function showThreadViewer(thread) {
+  const viewer = document.createElement('div');
+  viewer.className = 'commentsync-thread-viewer';
+  viewer.style.cssText = `
+    position: fixed;
+    right: 20px;
+    top: 20px;
+    width: 400px;
+    max-height: 80vh;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    z-index: 999999;
+    display: flex;
+    flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  `;
+
+  const screenshot = thread.comments[0]?.metadata?.screenshot || '';
+
+  viewer.innerHTML = `
+    <div style="padding: 16px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600; color: #1e293b;">Thread</h3>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="font-size: 12px; padding: 2px 8px; border-radius: 12px; background: ${thread.status === 'resolved' ? '#D1FAE5' : '#DBEAFE'}; color: ${thread.status === 'resolved' ? '#065F46' : '#1E40AF'};">
+            ${thread.status}
+          </span>
+          <span style="font-size: 11px; color: #64748b;">${thread.comments.length} comment${thread.comments.length !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+      <button class="thread-close" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #64748b; padding: 0;">×</button>
+    </div>
+
+    ${screenshot ? `<img src="${screenshot}" style="width: 100%; height: auto; border-bottom: 1px solid #e2e8f0;">` : ''}
+
+    <div style="flex: 1; overflow-y: auto; padding: 16px; max-height: 400px;" class="comments-container">
+      ${thread.comments.map(comment => renderComment(comment, thread)).join('')}
+    </div>
+
+    <div style="padding: 16px; border-top: 1px solid #e2e8f0;">
+      <textarea class="reply-input" placeholder="Add a reply..." style="width: 100%; height: 60px; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; resize: none; font-family: inherit; box-sizing: border-box; margin-bottom: 8px;"></textarea>
+      <div style="display: flex; gap: 8px;">
+        <button class="send-reply" style="flex: 1; background: #3B82F6; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">Reply</button>
+        ${thread.status === 'open'
+          ? '<button class="resolve-thread" style="flex: 1; background: #10B981; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">Resolve</button>'
+          : '<button class="reopen-thread" style="flex: 1; background: #F59E0B; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">Reopen</button>'
+        }
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(viewer);
+
+  viewer.querySelector('.thread-close').addEventListener('click', () => viewer.remove());
+  viewer.querySelector('.send-reply').addEventListener('click', () => handleReply(thread, viewer));
+
+  const resolveBtn = viewer.querySelector('.resolve-thread');
+  const reopenBtn = viewer.querySelector('.reopen-thread');
+
+  if (resolveBtn) {
+    resolveBtn.addEventListener('click', () => handleResolveThread(thread, viewer));
+  }
+  if (reopenBtn) {
+    reopenBtn.addEventListener('click', () => handleReopenThread(thread, viewer));
+  }
+
+  viewer.querySelectorAll('.edit-comment').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const commentId = e.target.dataset.commentId;
+      handleEditComment(commentId, viewer);
+    });
+  });
+
+  viewer.querySelectorAll('.delete-comment').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const commentId = e.target.dataset.commentId;
+      handleDeleteComment(commentId, thread, viewer);
+    });
+  });
+}
+
+function renderComment(comment, thread) {
+  const isAuthor = comment.author_id === activeSession?.userId;
+
+  return `
+    <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;" data-comment-id="${comment.id}">
+      <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+        <div style="flex: 1;">
+          <div style="font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 4px;">User</div>
+          <div style="font-size: 11px; color: #64748b;">${new Date(comment.created_at).toLocaleString()}</div>
+        </div>
+        ${isAuthor ? `
+          <div style="display: flex; gap: 4px;">
+            <button class="edit-comment" data-comment-id="${comment.id}" style="background: none; border: none; cursor: pointer; color: #64748b; font-size: 18px; padding: 4px;">✏️</button>
+            <button class="delete-comment" data-comment-id="${comment.id}" style="background: none; border: none; cursor: pointer; color: #EF4444; font-size: 18px; padding: 4px;">🗑️</button>
+          </div>
+        ` : ''}
+      </div>
+      <div class="comment-content" style="font-size: 13px; color: #475569; white-space: pre-wrap;">${comment.content}</div>
+    </div>
+  `;
+}
+
+async function handleReply(thread, viewer) {
+  const input = viewer.querySelector('.reply-input');
+  const text = input.value.trim();
+
+  if (!text) {
+    alert('Please enter a reply');
+    return;
+  }
+
+  try {
+    const result = await chrome.storage.local.get(['authToken', 'userId', 'supabaseUrl']);
+    const apiUrl = `${result.supabaseUrl}/rest/v1`;
+    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3dWl6a2xwZ3F0a25qc3NubmhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwNTkxMDAsImV4cCI6MjA3OTYzNTEwMH0.kg7wXyXubuMY0_K_BQmOH5z6awwMWEhg0jChk3cfL8g';
+
+    const response = await fetch(`${apiUrl}/comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${result.authToken}`,
+        'apikey': anonKey
+      },
+      body: JSON.stringify({
+        thread_id: thread.id,
+        author_id: result.userId,
+        content: text
+      })
+    });
+
+    if (response.ok) {
+      showNotification('Reply added!', 'success');
+      viewer.remove();
+      await loadExistingComments();
+    } else {
+      throw new Error('Failed to add reply');
+    }
+  } catch (error) {
+    showNotification('Failed to add reply', 'error');
+  }
+}
+
+async function handleResolveThread(thread, viewer) {
+  try {
+    const result = await chrome.storage.local.get(['authToken', 'userId', 'supabaseUrl']);
+    const apiUrl = `${result.supabaseUrl}/rest/v1`;
+    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3dWl6a2xwZ3F0a25qc3NubmhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwNTkxMDAsImV4cCI6MjA3OTYzNTEwMH0.kg7wXyXubuMY0_K_BQmOH5z6awwMWEhg0jChk3cfL8g';
+
+    const response = await fetch(`${apiUrl}/threads?id=eq.${thread.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${result.authToken}`,
+        'apikey': anonKey
+      },
+      body: JSON.stringify({
+        status: 'resolved',
+        resolved_at: new Date().toISOString(),
+        resolved_by: result.userId
+      })
+    });
+
+    if (response.ok) {
+      showNotification('Thread resolved!', 'success');
+      viewer.remove();
+      await loadExistingComments();
+    }
+  } catch (error) {
+    showNotification('Failed to resolve thread', 'error');
+  }
+}
+
+async function handleReopenThread(thread, viewer) {
+  try {
+    const result = await chrome.storage.local.get(['authToken', 'userId', 'supabaseUrl']);
+    const apiUrl = `${result.supabaseUrl}/rest/v1`;
+    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3dWl6a2xwZ3F0a25qc3NubmhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwNTkxMDAsImV4cCI6MjA3OTYzNTEwMH0.kg7wXyXubuMY0_K_BQmOH5z6awwMWEhg0jChk3cfL8g';
+
+    const response = await fetch(`${apiUrl}/threads?id=eq.${thread.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${result.authToken}`,
+        'apikey': anonKey
+      },
+      body: JSON.stringify({
+        status: 'open',
+        resolved_at: null,
+        resolved_by: null
+      })
+    });
+
+    if (response.ok) {
+      showNotification('Thread reopened!', 'success');
+      viewer.remove();
+      await loadExistingComments();
+    }
+  } catch (error) {
+    showNotification('Failed to reopen thread', 'error');
+  }
+}
+
+async function handleEditComment(commentId, viewer) {
+  const commentDiv = viewer.querySelector(`[data-comment-id="${commentId}"]`);
+  const contentDiv = commentDiv.querySelector('.comment-content');
+  const currentText = contentDiv.textContent;
+
+  contentDiv.innerHTML = `
+    <textarea style="width: 100%; height: 80px; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; resize: none; font-family: inherit; box-sizing: border-box; margin-bottom: 8px;">${currentText}</textarea>
+    <div style="display: flex; gap: 8px;">
+      <button class="save-edit" style="flex: 1; background: #3B82F6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer;">Save</button>
+      <button class="cancel-edit" style="flex: 1; background: #f1f5f9; color: #64748b; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer;">Cancel</button>
+    </div>
+  `;
+
+  const textarea = contentDiv.querySelector('textarea');
+  textarea.focus();
+
+  contentDiv.querySelector('.save-edit').addEventListener('click', async () => {
+    const newText = textarea.value.trim();
+    if (!newText) return;
+
+    try {
+      const result = await chrome.storage.local.get(['authToken', 'supabaseUrl']);
+      const apiUrl = `${result.supabaseUrl}/rest/v1`;
+      const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3dWl6a2xwZ3F0a25qc3NubmhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwNTkxMDAsImV4cCI6MjA3OTYzNTEwMH0.kg7wXyXubuMY0_K_BQmOH5z6awwMWEhg0jChk3cfL8g';
+
+      const response = await fetch(`${apiUrl}/comments?id=eq.${commentId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${result.authToken}`,
+          'apikey': anonKey
+        },
+        body: JSON.stringify({
+          content: newText,
+          edited_at: new Date().toISOString()
+        })
+      });
+
+      if (response.ok) {
+        contentDiv.textContent = newText;
+        showNotification('Comment updated!', 'success');
+      }
+    } catch (error) {
+      showNotification('Failed to update comment', 'error');
+      contentDiv.textContent = currentText;
+    }
+  });
+
+  contentDiv.querySelector('.cancel-edit').addEventListener('click', () => {
+    contentDiv.textContent = currentText;
+  });
+}
+
+async function handleDeleteComment(commentId, thread, viewer) {
+  if (!confirm('Are you sure you want to delete this comment?')) return;
+
+  try {
+    const result = await chrome.storage.local.get(['authToken', 'supabaseUrl']);
+    const apiUrl = `${result.supabaseUrl}/rest/v1`;
+    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3dWl6a2xwZ3F0a25qc3NubmhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwNTkxMDAsImV4cCI6MjA3OTYzNTEwMH0.kg7wXyXubuMY0_K_BQmOH5z6awwMWEhg0jChk3cfL8g';
+
+    const response = await fetch(`${apiUrl}/comments?id=eq.${commentId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${result.authToken}`,
+        'apikey': anonKey
+      }
+    });
+
+    if (response.ok) {
+      showNotification('Comment deleted!', 'success');
+      viewer.remove();
+      await loadExistingComments();
+
+      if (thread.comments.length === 1) {
+        await fetch(`${apiUrl}/threads?id=eq.${thread.id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${result.authToken}`,
+            'apikey': anonKey
+          }
+        });
+      }
+    }
+  } catch (error) {
+    showNotification('Failed to delete comment', 'error');
+  }
 }
 
 function showNotification(message, type) {
@@ -199,125 +636,3 @@ function showNotification(message, type) {
     setTimeout(() => notification.remove(), 300);
   }, 3000);
 }
-
-function handleElementClick(e) {
-  if (!isCommentSyncActive) return;
-
-  if (e.target.closest('#commentsync-widget') ||
-      e.target.closest('#commentsync-indicator') ||
-      e.target.closest('#commentsync-highlight-overlay')) {
-    return;
-  }
-
-  e.preventDefault();
-  e.stopPropagation();
-
-  selectedElement = e.target;
-  const rect = e.target.getBoundingClientRect();
-
-  commentWidget = createCommentWidget(
-    e.clientX + 10,
-    e.clientY + 10,
-    e.target
-  );
-}
-
-function handleMouseOver(e) {
-  if (!isCommentSyncActive || commentWidget) return;
-
-  if (e.target.closest('#commentsync-widget') ||
-      e.target.closest('#commentsync-indicator') ||
-      e.target.closest('#commentsync-highlight-overlay')) {
-    return;
-  }
-
-  highlightElement(e.target);
-}
-
-function handleMouseOut(e) {
-  if (!isCommentSyncActive || commentWidget) return;
-  hideHighlight();
-}
-
-function createIndicator() {
-  const indicator = document.createElement('div');
-  indicator.id = 'commentsync-indicator';
-  indicator.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: #3B82F6;
-    color: white;
-    padding: 12px 20px;
-    border-radius: 24px;
-    font-size: 13px;
-    font-weight: 600;
-    z-index: 999997;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-    cursor: pointer;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  `;
-  indicator.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <div style="width: 8px; height: 8px; background: #10B981; border-radius: 50%; animation: pulse 2s infinite;"></div>
-      <span>CommentSync Active - Click elements to comment</span>
-    </div>
-  `;
-
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-  `;
-  document.head.appendChild(style);
-
-  indicator.onclick = stopSession;
-  document.body.appendChild(indicator);
-}
-
-function startSession() {
-  isCommentSyncActive = true;
-  document.addEventListener('click', handleElementClick, true);
-  document.addEventListener('mouseover', handleMouseOver, true);
-  document.addEventListener('mouseout', handleMouseOut, true);
-  createIndicator();
-  document.body.style.cursor = 'crosshair';
-}
-
-function stopSession() {
-  isCommentSyncActive = false;
-  document.removeEventListener('click', handleElementClick, true);
-  document.removeEventListener('mouseover', handleMouseOver, true);
-  document.removeEventListener('mouseout', handleMouseOut, true);
-  document.body.style.cursor = '';
-
-  const indicator = document.getElementById('commentsync-indicator');
-  if (indicator) indicator.remove();
-
-  closeWidget();
-  chrome.runtime.sendMessage({ type: 'STOP_SESSION' });
-}
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'START_RECORDING') {
-    startSession();
-    sendResponse({ success: true });
-  }
-
-  if (message.type === 'STOP_RECORDING') {
-    stopSession();
-    sendResponse({ success: true });
-  }
-
-  if (message.type === 'SESSION_ACTIVE') {
-    startSession();
-  }
-});
-
-chrome.storage.local.get('activeSession', (result) => {
-  if (result.activeSession) {
-    startSession();
-  }
-});
