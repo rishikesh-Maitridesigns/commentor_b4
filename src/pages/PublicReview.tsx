@@ -45,6 +45,7 @@ export function PublicReview() {
   const [app, setApp] = useState<App | null>(null);
   const [threads, setThreads] = useState<ThreadWithComments[]>([]);
   const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [selectedThread, setSelectedThread] = useState<ThreadWithComments | null>(null);
   const [iframeUrl, setIframeUrl] = useState('');
   const [commentPins, setCommentPins] = useState<CommentPin[]>([]);
@@ -85,12 +86,18 @@ export function PublicReview() {
   }, [commentMode, showCommentOverlay]);
 
   useEffect(() => {
-    if (appId) {
+    if (!authLoading && !user) {
+      navigate('/login');
+    }
+  }, [authLoading, user, navigate]);
+
+  useEffect(() => {
+    if (appId && user && !authLoading) {
       fetchAppDetails();
       const interval = setInterval(fetchThreads, 5000);
       return () => clearInterval(interval);
     }
-  }, [appId]);
+  }, [appId, user, authLoading]);
 
   useEffect(() => {
     if (app) {
@@ -109,19 +116,22 @@ export function PublicReview() {
   }, [threads]);
 
   const fetchAppDetails = async () => {
-    if (!appId) return;
+    if (!appId || !user) return;
 
-    const { data: appData } = await supabase
+    const { data: appData, error } = await supabase
       .from('apps')
       .select('*')
       .eq('id', appId)
       .maybeSingle();
 
-    if (appData) {
-      setApp(appData);
-      await fetchThreads();
+    if (error || !appData) {
+      setAccessDenied(true);
+      setLoading(false);
+      return;
     }
 
+    setApp(appData);
+    await fetchThreads();
     setLoading(false);
   };
 
@@ -403,6 +413,28 @@ export function PublicReview() {
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
           >
             Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-900">
+        <div className="text-center max-w-md px-6">
+          <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <X className="w-10 h-10 text-red-500" />
+          </div>
+          <h1 className="text-2xl font-semibold text-white mb-3">Access Denied</h1>
+          <p className="text-slate-400 mb-6 leading-relaxed">
+            You don't have permission to access this app. Please contact the app owner or workspace administrator to be granted access.
+          </p>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+          >
+            Go to Dashboard
           </button>
         </div>
       </div>
