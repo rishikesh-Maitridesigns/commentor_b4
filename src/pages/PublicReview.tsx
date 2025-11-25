@@ -211,10 +211,14 @@ export function PublicReview() {
         const pos = typeof thread.position_data === 'string'
           ? JSON.parse(thread.position_data)
           : thread.position_data;
+
+        const scrollX = pos.scrollX || 0;
+        const scrollY = pos.scrollY || 0;
+
         return {
           threadId: thread.id,
-          x: pos.x || 0,
-          y: pos.y || 0,
+          x: (pos.x || 0) - scrollX,
+          y: (pos.y || 0) - scrollY,
         };
       });
     setCommentPins(pins);
