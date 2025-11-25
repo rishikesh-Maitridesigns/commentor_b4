@@ -12,6 +12,11 @@ import {
   Edit,
   Save,
   Trash2,
+  Chrome,
+  Download,
+  ExternalLink,
+  Shield,
+  AlertCircle,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { supabase } from '../lib/supabase';
@@ -62,6 +67,8 @@ export function PublicReview() {
   const [editText, setEditText] = useState('');
   const [commentMenuOpen, setCommentMenuOpen] = useState<string | null>(null);
   const [capturingScreenshot, setCapturingScreenshot] = useState(false);
+  const [iframeError, setIframeError] = useState(false);
+  const [checkingIframe, setCheckingIframe] = useState(true);
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -106,8 +113,50 @@ export function PublicReview() {
         url = 'https://' + url;
       }
       setIframeUrl(url);
+      setCheckingIframe(true);
+      setIframeError(false);
     }
   }, [app]);
+
+  useEffect(() => {
+    if (!iframeRef.current || !iframeUrl) return;
+
+    const iframe = iframeRef.current;
+    let timeoutId: NodeJS.Timeout;
+
+    const handleLoad = () => {
+      clearTimeout(timeoutId);
+      setCheckingIframe(false);
+      setIframeError(false);
+    };
+
+    const handleError = () => {
+      clearTimeout(timeoutId);
+      setCheckingIframe(false);
+      setIframeError(true);
+    };
+
+    timeoutId = setTimeout(() => {
+      try {
+        if (!iframe.contentDocument && !iframe.contentWindow) {
+          setIframeError(true);
+          setCheckingIframe(false);
+        }
+      } catch (e) {
+        setIframeError(true);
+        setCheckingIframe(false);
+      }
+    }, 3000);
+
+    iframe.addEventListener('load', handleLoad);
+    iframe.addEventListener('error', handleError);
+
+    return () => {
+      clearTimeout(timeoutId);
+      iframe.removeEventListener('load', handleLoad);
+      iframe.removeEventListener('error', handleError);
+    };
+  }, [iframeUrl]);
 
   useEffect(() => {
     if (threads.length > 0) {
@@ -465,35 +514,47 @@ export function PublicReview() {
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">
-            Press <kbd className="px-2 py-1 bg-slate-700 rounded text-slate-300 font-mono">C</kbd> to comment
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCommentMode(commentMode === 'spatial' ? 'off' : 'spatial')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
-                commentMode === 'spatial'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-            >
-              <MousePointer2 className="w-4 h-4" />
-              <span>{commentMode === 'spatial' ? 'Click to Comment' : 'Spatial Comment'}</span>
-            </button>
-            <button
-              onClick={() => setCommentMode(commentMode === 'element' ? 'off' : 'element')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition relative ${
-                commentMode === 'element'
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-              title="Advanced: Select specific elements"
-            >
-              <Target className="w-4 h-4" />
-              <span>{commentMode === 'element' ? 'Select Element' : 'Element Selector'}</span>
-              <span className="absolute -top-1 -right-1 px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full">PRO</span>
-            </button>
-          </div>
+          {!iframeError && (
+            <>
+              <span className="text-xs text-slate-400">
+                Press <kbd className="px-2 py-1 bg-slate-700 rounded text-slate-300 font-mono">C</kbd> to comment
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCommentMode(commentMode === 'spatial' ? 'off' : 'spatial')}
+                  disabled={checkingIframe}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                    commentMode === 'spatial'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  <MousePointer2 className="w-4 h-4" />
+                  <span>{commentMode === 'spatial' ? 'Click to Comment' : 'Spatial Comment'}</span>
+                </button>
+                <button
+                  onClick={() => setCommentMode(commentMode === 'element' ? 'off' : 'element')}
+                  disabled={checkingIframe}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition relative disabled:opacity-50 disabled:cursor-not-allowed ${
+                    commentMode === 'element'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                  title="Advanced: Select specific elements"
+                >
+                  <Target className="w-4 h-4" />
+                  <span>{commentMode === 'element' ? 'Select Element' : 'Element Selector'}</span>
+                  <span className="absolute -top-1 -right-1 px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full">PRO</span>
+                </button>
+              </div>
+            </>
+          )}
+          {iframeError && (
+            <div className="flex items-center gap-2 text-amber-400">
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-sm font-medium">Site blocked - Use Chrome extension</span>
+            </div>
+          )}
         </div>
       </header>
 
@@ -508,16 +569,110 @@ export function PublicReview() {
           >
             {iframeUrl ? (
               <>
-                <iframe
-                  ref={iframeRef}
-                  src={iframeUrl}
-                  className={`w-full h-full ${
-                    commentMode === 'off' ? 'pointer-events-auto' : 'pointer-events-none'
-                  }`}
-                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-                />
+                {iframeError ? (
+                  <div className="flex items-center justify-center h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8">
+                    <div className="max-w-2xl w-full text-center">
+                      <div className="mb-8 relative">
+                        <div className="w-32 h-32 mx-auto bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-3xl flex items-center justify-center backdrop-blur-sm border border-blue-500/30 shadow-2xl">
+                          <Shield className="w-16 h-16 text-blue-400" />
+                        </div>
+                        <div className="absolute -top-2 -right-2 w-12 h-12 bg-amber-500 rounded-full flex items-center justify-center shadow-xl animate-pulse">
+                          <AlertCircle className="w-6 h-6 text-white" />
+                        </div>
+                      </div>
 
-                {commentMode === 'off' && commentPins.map((pin) => {
+                      <h2 className="text-3xl font-bold text-white mb-4">
+                        This Site Blocks Embedding
+                      </h2>
+
+                      <p className="text-lg text-slate-300 mb-8 leading-relaxed">
+                        <span className="font-semibold text-blue-400">{app?.name}</span> uses security policies that prevent embedding in iframes.
+                        This is common for sites with OAuth login (Google, GitHub, etc.) or strict Content Security Policies.
+                      </p>
+
+                      <div className="bg-slate-800/80 backdrop-blur-sm rounded-2xl p-8 mb-8 border border-slate-700 shadow-xl">
+                        <div className="flex items-center justify-center gap-3 mb-6">
+                          <Chrome className="w-8 h-8 text-blue-400" />
+                          <h3 className="text-xl font-semibold text-white">Use Our Chrome Extension Instead</h3>
+                        </div>
+
+                        <p className="text-slate-300 mb-6 leading-relaxed">
+                          The CommentSync Chrome Extension works on <strong>any website</strong> without restrictions.
+                          It bypasses all security limitations and lets you add comments directly on the live site.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                          <div className="bg-slate-700/50 rounded-xl p-4 border border-slate-600">
+                            <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center mb-3 mx-auto">
+                              <Download className="w-5 h-5 text-blue-400" />
+                            </div>
+                            <p className="text-sm text-slate-300 font-medium mb-1">Step 1</p>
+                            <p className="text-xs text-slate-400">Install the extension</p>
+                          </div>
+
+                          <div className="bg-slate-700/50 rounded-xl p-4 border border-slate-600">
+                            <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center mb-3 mx-auto">
+                              <Chrome className="w-5 h-5 text-purple-400" />
+                            </div>
+                            <p className="text-sm text-slate-300 font-medium mb-1">Step 2</p>
+                            <p className="text-xs text-slate-400">Sign in & select app</p>
+                          </div>
+
+                          <div className="bg-slate-700/50 rounded-xl p-4 border border-slate-600">
+                            <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center mb-3 mx-auto">
+                              <MessageSquare className="w-5 h-5 text-green-400" />
+                            </div>
+                            <p className="text-sm text-slate-300 font-medium mb-1">Step 3</p>
+                            <p className="text-xs text-slate-400">Add comments anywhere</p>
+                          </div>
+                        </div>
+
+                        <a
+                          href="/extension/README.md"
+                          target="_blank"
+                          className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition-all hover:scale-105 hover:shadow-xl hover:shadow-blue-500/40"
+                        >
+                          <Chrome className="w-6 h-6" />
+                          <span>Get Chrome Extension</span>
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </div>
+
+                      <div className="flex items-start gap-3 text-left bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                        <div className="flex-shrink-0 w-6 h-6 bg-blue-500/20 rounded-full flex items-center justify-center mt-0.5">
+                          <AlertCircle className="w-4 h-4 text-blue-400" />
+                        </div>
+                        <div className="text-sm text-slate-300">
+                          <p className="font-medium text-blue-300 mb-1">Why does this happen?</p>
+                          <p className="text-slate-400">
+                            Many modern websites use <code className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">X-Frame-Options</code> and
+                            <code className="px-1.5 py-0.5 bg-slate-700 rounded text-xs ml-1">Content-Security-Policy</code> headers
+                            to prevent their content from being displayed in iframes. This is a security feature to protect against clickjacking attacks.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : checkingIframe ? (
+                  <div className="flex items-center justify-center h-full bg-slate-800">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
+                      <p className="text-slate-300 text-lg font-medium">Loading {app?.name}...</p>
+                      <p className="text-slate-500 text-sm mt-2">Checking if site allows embedding</p>
+                    </div>
+                  </div>
+                ) : (
+                  <iframe
+                    ref={iframeRef}
+                    src={iframeUrl}
+                    className={`w-full h-full ${
+                      commentMode === 'off' ? 'pointer-events-auto' : 'pointer-events-none'
+                    }`}
+                    sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+                  />
+                )}
+
+                {!iframeError && !checkingIframe && commentMode === 'off' && commentPins.map((pin) => {
                   const thread = threads.find(t => t.id === pin.threadId);
                   if (!thread) return null;
                   const isSelected = selectedThread?.id === thread.id && showCommentOverlay;
@@ -547,7 +702,7 @@ export function PublicReview() {
                   );
                 })}
 
-                {commentMode !== 'off' && (
+                {!iframeError && !checkingIframe && commentMode !== 'off' && (
                   <div
                     className="absolute inset-0 pointer-events-none z-10"
                     style={{ backgroundColor: commentMode === 'element' ? 'rgba(0,0,0,0.05)' : 'transparent' }}
@@ -561,7 +716,7 @@ export function PublicReview() {
                   </div>
                 )}
 
-                {commentMode === 'element' && !showCommentOverlay && (
+                {!iframeError && !checkingIframe && commentMode === 'element' && !showCommentOverlay && (
                   <ElementSelector
                     isActive={commentMode === 'element' && !showCommentOverlay}
                     onElementSelected={handleElementSelected}
@@ -569,7 +724,7 @@ export function PublicReview() {
                   />
                 )}
 
-                {newCommentPosition && (
+                {!iframeError && !checkingIframe && newCommentPosition && (
                   <div
                     className="absolute w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shadow-lg ring-4 ring-blue-300 animate-pulse pointer-events-none z-20"
                     style={{
@@ -582,7 +737,7 @@ export function PublicReview() {
                   </div>
                 )}
 
-                {showCommentOverlay && (
+                {!iframeError && !checkingIframe && showCommentOverlay && (
                   <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center p-8 animate-in fade-in duration-200 pointer-events-auto z-50">
                     <div className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col animate-in slide-in-from-bottom-4 duration-300">
                       <div className="flex items-center justify-between p-6 border-b border-slate-700">
