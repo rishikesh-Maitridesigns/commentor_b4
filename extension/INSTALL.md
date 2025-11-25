@@ -14,7 +14,7 @@ The extension files are located in the `/extension` folder of this project.
 
 3. Click **"Load unpacked"**
 
-4. Navigate to and select the `extension` folder (or `extension/commentsync-extension` if built)
+4. Navigate to and select the `extension` folder
 
 5. The CommentSync extension icon should now appear in your Chrome toolbar
 
