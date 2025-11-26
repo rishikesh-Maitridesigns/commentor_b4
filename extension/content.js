@@ -13,6 +13,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     loadExistingComments();
     document.body.style.cursor = 'crosshair';
     sendResponse({ success: true });
+    return true;
   }
 
   if (message.type === 'SESSION_STOPPED') {
@@ -21,6 +22,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     clearAllPins();
     document.body.style.cursor = '';
     sendResponse({ success: true });
+    return true;
   }
 });
 

@@ -208,27 +208,36 @@ async function handleStartRecording() {
   chrome.runtime.sendMessage({
     type: 'START_SESSION',
     appId: appId,
-    userId: result.userId
-  }, () => {
-    chrome.tabs.sendMessage(tab.id, { type: 'START_RECORDING' }, () => {
-      updateStatus(true, appId);
-    });
+    userId: result.userId,
+    tabId: tab.id
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error starting session:', chrome.runtime.lastError);
+      return;
+    }
+    updateStatus(true, appId);
   });
 }
 
 async function handleStopRecording() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-  chrome.tabs.sendMessage(tab.id, { type: 'STOP_RECORDING' }, () => {
-    chrome.runtime.sendMessage({ type: 'STOP_SESSION' }, () => {
-      updateStatus(false);
-    });
+  chrome.runtime.sendMessage({ type: 'STOP_SESSION', tabId: tab.id }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('Error stopping session:', chrome.runtime.lastError);
+      return;
+    }
+    updateStatus(false);
   });
 }
 
 async function checkActiveSession() {
   chrome.runtime.sendMessage({ type: 'GET_SESSION' }, (response) => {
-    if (response.session) {
+    if (chrome.runtime.lastError) {
+      console.error('Error getting session:', chrome.runtime.lastError);
+      return;
+    }
+    if (response && response.session) {
       updateStatus(true, response.session.appId);
     }
   });

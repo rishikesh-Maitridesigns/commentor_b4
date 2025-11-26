@@ -10,20 +10,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       appId: message.appId,
       userId: message.userId,
       startTime: Date.now(),
-      tabId: sender.tab?.id
+      tabId: message.tabId
     };
     chrome.storage.local.set({ activeSession });
+
+    chrome.tabs.sendMessage(message.tabId, {
+      type: 'SESSION_ACTIVE',
+      session: activeSession
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.log('Content script not ready yet, will activate on page load');
+      }
+    });
+
     sendResponse({ success: true });
+    return true;
   }
 
   if (message.type === 'STOP_SESSION') {
+    if (message.tabId) {
+      chrome.tabs.sendMessage(message.tabId, {
+        type: 'SESSION_STOPPED'
+      }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('Content script not available');
+        }
+      });
+    }
+
     activeSession = null;
     chrome.storage.local.remove('activeSession');
     sendResponse({ success: true });
+    return true;
   }
 
   if (message.type === 'GET_SESSION') {
     sendResponse({ session: activeSession });
+    return true;
   }
 
   if (message.type === 'SAVE_COMMENT') {
