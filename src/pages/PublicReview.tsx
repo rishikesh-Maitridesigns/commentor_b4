@@ -870,9 +870,39 @@ export function PublicReview() {
                                       </div>
                                     </div>
                                   ) : (
-                                    <p className="text-sm text-slate-200 leading-relaxed">
-                                      {comment.content}
-                                    </p>
+                                    <>
+                                      <p className="text-sm text-slate-200 leading-relaxed">
+                                        {comment.content}
+                                      </p>
+                                      {comment.metadata?.screenshot && (
+                                        <div className="mt-3">
+                                          <img
+                                            src={comment.metadata.screenshot}
+                                            alt="Screenshot"
+                                            className="rounded-lg border border-slate-600 max-w-full cursor-pointer hover:border-blue-500 transition"
+                                            onClick={() => window.open(comment.metadata.screenshot, '_blank')}
+                                          />
+                                        </div>
+                                      )}
+                                      {comment.metadata?.htmlSnapshot && (
+                                        <div className="mt-3">
+                                          <button
+                                            onClick={() => {
+                                              const snapshot = comment.metadata.htmlSnapshot;
+                                              const newWindow = window.open('', '_blank');
+                                              if (newWindow) {
+                                                newWindow.document.write(snapshot.html);
+                                                newWindow.document.close();
+                                              }
+                                            }}
+                                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1.5 transition"
+                                          >
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                            View Interactive HTML Snapshot
+                                          </button>
+                                        </div>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </div>

@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('login-btn').addEventListener('click', handleLogin);
   document.getElementById('logout-btn').addEventListener('click', handleLogout);
+  document.getElementById('goto-page-btn').addEventListener('click', handleGotoPage);
   document.getElementById('start-btn').addEventListener('click', handleStartRecording);
   document.getElementById('stop-btn').addEventListener('click', handleStopRecording);
   document.getElementById('open-dashboard').addEventListener('click', openDashboard);
@@ -134,22 +135,62 @@ async function loadApps() {
     });
 
     select.addEventListener('change', handleAppSelect);
+    checkIfOnCorrectPage();
   } catch (error) {
     showError('Failed to load apps: ' + error.message);
   }
 }
 
 async function handleAppSelect(event) {
-  const select = event.target;
-  const selectedOption = select.options[select.selectedIndex];
-  const baseUrl = selectedOption.dataset.baseUrl;
+  const appId = event.target.value;
+  const gotoBtn = document.getElementById('goto-page-btn');
+  const recordingControls = document.getElementById('recording-controls');
 
-  if (baseUrl) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab && !tab.url.startsWith(baseUrl)) {
-      await chrome.tabs.update(tab.id, { url: baseUrl });
-    }
+  if (appId) {
+    await chrome.storage.local.set({ selectedAppId: appId });
+    checkIfOnCorrectPage();
+  } else {
+    gotoBtn.classList.add('hidden');
+    recordingControls.classList.add('hidden');
   }
+}
+
+async function checkIfOnCorrectPage() {
+  const appId = document.getElementById('app-select').value;
+  if (!appId) return;
+
+  const app = apps.find(a => a.id === appId);
+  if (!app) return;
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const gotoBtn = document.getElementById('goto-page-btn');
+  const recordingControls = document.getElementById('recording-controls');
+
+  if (tab && tab.url.startsWith(app.base_url)) {
+    gotoBtn.classList.add('hidden');
+    recordingControls.classList.remove('hidden');
+  } else {
+    gotoBtn.classList.remove('hidden');
+    recordingControls.classList.add('hidden');
+  }
+}
+
+async function handleGotoPage() {
+  const appId = document.getElementById('app-select').value;
+  if (!appId) return;
+
+  const app = apps.find(a => a.id === appId);
+  if (!app || !app.base_url) {
+    showError('App URL not configured');
+    return;
+  }
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  await chrome.tabs.update(tab.id, { url: app.base_url });
+
+  setTimeout(() => {
+    checkIfOnCorrectPage();
+  }, 1000);
 }
 
 async function handleStartRecording() {

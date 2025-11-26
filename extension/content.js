@@ -282,6 +282,40 @@ function closeWidget() {
   selectedElement = null;
 }
 
+function captureHTMLSnapshot() {
+  const clonedDoc = document.cloneNode(true);
+
+  const scripts = clonedDoc.querySelectorAll('script');
+  scripts.forEach(script => script.remove());
+
+  const iframes = clonedDoc.querySelectorAll('iframe');
+  iframes.forEach(iframe => iframe.remove());
+
+  const commentsyncElements = clonedDoc.querySelectorAll('[id^="commentsync"], [class*="commentsync"]');
+  commentsyncElements.forEach(el => el.remove());
+
+  const head = clonedDoc.querySelector('head');
+  const baseTag = clonedDoc.createElement('base');
+  baseTag.href = window.location.origin;
+  head.insertBefore(baseTag, head.firstChild);
+
+  const htmlSnapshot = {
+    html: clonedDoc.documentElement.outerHTML,
+    url: window.location.href,
+    title: document.title,
+    timestamp: new Date().toISOString(),
+    styles: Array.from(document.styleSheets).slice(0, 10).map(sheet => {
+      try {
+        return Array.from(sheet.cssRules).map(rule => rule.cssText).join('\n');
+      } catch (e) {
+        return '';
+      }
+    }).join('\n')
+  };
+
+  return htmlSnapshot;
+}
+
 async function submitComment(element, text) {
   if (!text.trim()) {
     alert('Please enter a comment');
@@ -291,6 +325,8 @@ async function submitComment(element, text) {
   const rect = element.getBoundingClientRect();
 
   chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, async (response) => {
+    const htmlSnapshot = captureHTMLSnapshot();
+
     const commentData = {
       domSelector: getOptimalSelector(element),
       text: text.trim(),
@@ -299,6 +335,7 @@ async function submitComment(element, text) {
       scrollX: window.scrollX,
       scrollY: window.scrollY,
       screenshot: response.screenshot,
+      htmlSnapshot: htmlSnapshot,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight
     };
@@ -418,6 +455,22 @@ function renderComment(comment, thread) {
         ` : ''}
       </div>
       <div class="comment-content" style="font-size: 13px; color: #475569; white-space: pre-wrap;">${comment.content}</div>
+      ${comment.metadata?.screenshot ? `
+        <div style="margin-top: 12px;">
+          <img src="${comment.metadata.screenshot}" alt="Screenshot" style="max-width: 100%; border-radius: 8px; border: 1px solid #e2e8f0; cursor: pointer;" onclick="window.open('${comment.metadata.screenshot}', '_blank')">
+        </div>
+      ` : ''}
+      ${comment.metadata?.htmlSnapshot ? `
+        <div style="margin-top: 8px;">
+          <button onclick="(function() {
+            const win = window.open('', '_blank');
+            win.document.write('${comment.metadata.htmlSnapshot.html.replace(/'/g, "\\'")}');
+            win.document.close();
+          })()" style="font-size: 11px; color: #3B82F6; background: none; border: none; cursor: pointer; text-decoration: underline;">
+            View Interactive HTML Snapshot
+          </button>
+        </div>
+      ` : ''}
     </div>
   `;
 }

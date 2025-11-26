@@ -94,6 +94,7 @@ async function handleSaveComment(commentData, tab) {
     metadata: {
       page_title: tab.title,
       screenshot: commentData.screenshot,
+      htmlSnapshot: commentData.htmlSnapshot,
       user_agent: navigator.userAgent
     }
   };
