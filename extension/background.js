@@ -74,7 +74,7 @@ async function handleSaveComment(commentData, tab) {
 
   const supabaseUrl = await chrome.storage.local.get('supabaseUrl');
   const apiUrl = `${supabaseUrl.supabaseUrl}/rest/v1`;
-  const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3dWl6a2xwZ3F0a25qc3NubmhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwNTkxMDAsImV4cCI6MjA3OTYzNTEwMH0.kg7wXyXubuMY0_K_BQmOH5z6awwMWEhg0jChk3cfL8g';
+  const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaGVtbHFnd2ZrYnFwb3FzamduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3MjY1ODUsImV4cCI6MjA3OTMwMjU4NX0.TGXLn91XAHMtCwAaXjWi3E4Z79OxJnJRZPgGV2SYOhw';
 
   const threadPayload = {
     app_id: session.activeSession.appId,
