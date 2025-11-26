@@ -1,3 +1,5 @@
+import { SUPABASE_CONFIG } from './supabase.config.js';
+
 let activeSession = null;
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -72,9 +74,8 @@ async function handleSaveComment(commentData, tab) {
     throw new Error('No active session or auth token');
   }
 
-  const supabaseUrl = await chrome.storage.local.get('supabaseUrl');
-  const apiUrl = `${supabaseUrl.supabaseUrl}/rest/v1`;
-  const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaGVtbHFnd2ZrYnFwb3FzamduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3MjY1ODUsImV4cCI6MjA3OTMwMjU4NX0.TGXLn91XAHMtCwAaXjWi3E4Z79OxJnJRZPgGV2SYOhw';
+  const apiUrl = `${SUPABASE_CONFIG.url}/rest/v1`;
+  const anonKey = SUPABASE_CONFIG.anonKey;
 
   const threadPayload = {
     app_id: session.activeSession.appId,

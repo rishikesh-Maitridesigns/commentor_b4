@@ -8,7 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "validate-config": "node validate-config.js",
+    "sync-config": "cp supabase.config.js extension/supabase.config.js && echo '✅ Synced config to extension folder'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

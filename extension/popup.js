@@ -1,5 +1,7 @@
-const SUPABASE_URL = 'https://kfhemlqgwfkbqpoqsjgn.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaGVtbHFnd2ZrYnFwb3FzamduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3MjY1ODUsImV4cCI6MjA3OTMwMjU4NX0.TGXLn91XAHMtCwAaXjWi3E4Z79OxJnJRZPgGV2SYOhw';
+import { SUPABASE_CONFIG } from './supabase.config.js';
+
+const SUPABASE_URL = SUPABASE_CONFIG.url;
+const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
 
 let currentUser = null;
 let apps = [];

@@ -13,7 +13,8 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_popup": "popup.html",
@@ -35,12 +36,13 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "css": ["content.css"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "type": "module"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["widget.html", "icons/*"],
+      "resources": ["widget.html", "icons/*", "supabase.config.js"],
       "matches": ["<all_urls>"]
     }
   ]

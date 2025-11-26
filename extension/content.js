@@ -1,3 +1,5 @@
+import { SUPABASE_CONFIG } from './supabase.config.js';
+
 let isCommentSyncActive = false;
 let selectedElement = null;
 let commentWidget = null;
@@ -32,7 +34,7 @@ async function loadExistingComments() {
   try {
     const result = await chrome.storage.local.get(['authToken', 'supabaseUrl']);
     const apiUrl = `${result.supabaseUrl}/rest/v1`;
-    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaGVtbHFnd2ZrYnFwb3FzamduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3MjY1ODUsImV4cCI6MjA3OTMwMjU4NX0.TGXLn91XAHMtCwAaXjWi3E4Z79OxJnJRZPgGV2SYOhw';
+    const anonKey = SUPABASE_CONFIG.anonKey;
 
     const threadsResponse = await fetch(
       `${apiUrl}/threads?app_id=eq.${activeSession.appId}&page_url=eq.${encodeURIComponent(window.location.href)}&select=*,comments(*)`,
@@ -489,7 +491,7 @@ async function handleReply(thread, viewer) {
   try {
     const result = await chrome.storage.local.get(['authToken', 'userId', 'supabaseUrl']);
     const apiUrl = `${result.supabaseUrl}/rest/v1`;
-    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaGVtbHFnd2ZrYnFwb3FzamduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3MjY1ODUsImV4cCI6MjA3OTMwMjU4NX0.TGXLn91XAHMtCwAaXjWi3E4Z79OxJnJRZPgGV2SYOhw';
+    const anonKey = SUPABASE_CONFIG.anonKey;
 
     const response = await fetch(`${apiUrl}/comments`, {
       method: 'POST',
@@ -521,7 +523,7 @@ async function handleResolveThread(thread, viewer) {
   try {
     const result = await chrome.storage.local.get(['authToken', 'userId', 'supabaseUrl']);
     const apiUrl = `${result.supabaseUrl}/rest/v1`;
-    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaGVtbHFnd2ZrYnFwb3FzamduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3MjY1ODUsImV4cCI6MjA3OTMwMjU4NX0.TGXLn91XAHMtCwAaXjWi3E4Z79OxJnJRZPgGV2SYOhw';
+    const anonKey = SUPABASE_CONFIG.anonKey;
 
     const response = await fetch(`${apiUrl}/threads?id=eq.${thread.id}`, {
       method: 'PATCH',
@@ -551,7 +553,7 @@ async function handleReopenThread(thread, viewer) {
   try {
     const result = await chrome.storage.local.get(['authToken', 'userId', 'supabaseUrl']);
     const apiUrl = `${result.supabaseUrl}/rest/v1`;
-    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaGVtbHFnd2ZrYnFwb3FzamduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3MjY1ODUsImV4cCI6MjA3OTMwMjU4NX0.TGXLn91XAHMtCwAaXjWi3E4Z79OxJnJRZPgGV2SYOhw';
+    const anonKey = SUPABASE_CONFIG.anonKey;
 
     const response = await fetch(`${apiUrl}/threads?id=eq.${thread.id}`, {
       method: 'PATCH',
@@ -600,7 +602,7 @@ async function handleEditComment(commentId, viewer) {
     try {
       const result = await chrome.storage.local.get(['authToken', 'supabaseUrl']);
       const apiUrl = `${result.supabaseUrl}/rest/v1`;
-      const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaGVtbHFnd2ZrYnFwb3FzamduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3MjY1ODUsImV4cCI6MjA3OTMwMjU4NX0.TGXLn91XAHMtCwAaXjWi3E4Z79OxJnJRZPgGV2SYOhw';
+      const anonKey = SUPABASE_CONFIG.anonKey;
 
       const response = await fetch(`${apiUrl}/comments?id=eq.${commentId}`, {
         method: 'PATCH',
@@ -636,7 +638,7 @@ async function handleDeleteComment(commentId, thread, viewer) {
   try {
     const result = await chrome.storage.local.get(['authToken', 'supabaseUrl']);
     const apiUrl = `${result.supabaseUrl}/rest/v1`;
-    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmaGVtbHFnd2ZrYnFwb3FzamduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM3MjY1ODUsImV4cCI6MjA3OTMwMjU4NX0.TGXLn91XAHMtCwAaXjWi3E4Z79OxJnJRZPgGV2SYOhw';
+    const anonKey = SUPABASE_CONFIG.anonKey;
 
     const response = await fetch(`${apiUrl}/comments?id=eq.${commentId}`, {
       method: 'DELETE',
