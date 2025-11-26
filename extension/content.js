@@ -375,35 +375,52 @@ async function submitComment(element, text) {
 
   const rect = element.getBoundingClientRect();
 
-  chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, async (response) => {
-    const htmlSnapshot = captureHTMLSnapshot();
-
-    const commentData = {
-      domSelector: getOptimalSelector(element),
-      text: text.trim(),
-      x: rect.left + window.scrollX,
-      y: rect.top + window.scrollY,
-      scrollX: window.scrollX,
-      scrollY: window.scrollY,
-      screenshot: response.screenshot,
-      htmlSnapshot: htmlSnapshot,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight
-    };
-
-    chrome.runtime.sendMessage(
-      { type: 'SAVE_COMMENT', data: commentData },
-      (response) => {
-        if (response.success) {
-          showNotification('Comment saved successfully!', 'success');
-          closeWidget();
-          loadExistingComments();
-        } else {
-          showNotification('Failed to save comment: ' + response.error, 'error');
-        }
+  try {
+    chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, async (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('❌ Extension context error:', chrome.runtime.lastError);
+        showNotification('Extension was reloaded. Please refresh the page and try again.', 'error');
+        return;
       }
-    );
-  });
+
+      const htmlSnapshot = captureHTMLSnapshot();
+
+      const commentData = {
+        domSelector: getOptimalSelector(element),
+        text: text.trim(),
+        x: rect.left + window.scrollX,
+        y: rect.top + window.scrollY,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+        screenshot: response.screenshot,
+        htmlSnapshot: htmlSnapshot,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
+      };
+
+      chrome.runtime.sendMessage(
+        { type: 'SAVE_COMMENT', data: commentData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('❌ Extension context error:', chrome.runtime.lastError);
+            showNotification('Extension was reloaded. Please refresh the page and try again.', 'error');
+            return;
+          }
+
+          if (response.success) {
+            showNotification('Comment saved successfully!', 'success');
+            closeWidget();
+            loadExistingComments();
+          } else {
+            showNotification('Failed to save comment: ' + response.error, 'error');
+          }
+        }
+      );
+    });
+  } catch (error) {
+    console.error('❌ Error submitting comment:', error);
+    showNotification('Failed to save comment. Please refresh the page and try again.', 'error');
+  }
 }
 
 function showThreadViewer(thread) {

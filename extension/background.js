@@ -1,3 +1,5 @@
+importScripts('supabase.config.js');
+
 let activeSession = null;
 
 chrome.runtime.onInstalled.addListener(() => {
