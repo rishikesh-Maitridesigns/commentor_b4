@@ -3,11 +3,13 @@ let selectedElement = null;
 let commentWidget = null;
 let highlightOverlay = null;
 let existingThreads = [];
+let allAppThreads = [];
 let commentPins = [];
 let activeSession = null;
 let commentsPanelOpen = false;
 let commentsPanel = null;
 let fabButton = null;
+let showResolvedComments = true;
 
 function getCurrentDomain() {
   try {
@@ -65,21 +67,39 @@ async function loadExistingComments() {
     const apiUrl = `${result.supabaseUrl}/rest/v1`;
     const anonKey = SUPABASE_CONFIG.anonKey;
 
-    const threadsResponse = await fetch(
-      `${apiUrl}/threads?app_id=eq.${activeSession.appId}&page_url=eq.${encodeURIComponent(window.location.href)}&select=*,comments(*)`,
-      {
-        headers: {
-          'Authorization': `Bearer ${result.authToken}`,
-          'apikey': anonKey
-        }
-      }
-    );
+    const currentPageUrl = window.location.href;
 
-    if (threadsResponse.ok) {
-      existingThreads = await threadsResponse.json();
+    const [pageThreadsResponse, allThreadsResponse] = await Promise.all([
+      fetch(
+        `${apiUrl}/threads?app_id=eq.${activeSession.appId}&page_url=eq.${encodeURIComponent(currentPageUrl)}&select=*,comments(*)&order=created_at.desc`,
+        {
+          headers: {
+            'Authorization': `Bearer ${result.authToken}`,
+            'apikey': anonKey
+          }
+        }
+      ),
+      fetch(
+        `${apiUrl}/threads?app_id=eq.${activeSession.appId}&select=*,comments(*)&order=created_at.desc`,
+        {
+          headers: {
+            'Authorization': `Bearer ${result.authToken}`,
+            'apikey': anonKey
+          }
+        }
+      )
+    ]);
+
+    if (pageThreadsResponse.ok) {
+      existingThreads = await pageThreadsResponse.json();
       displayCommentPins();
-      refreshCommentsPanel();
     }
+
+    if (allThreadsResponse.ok) {
+      allAppThreads = await allThreadsResponse.json();
+    }
+
+    refreshCommentsPanel();
   } catch (error) {
     console.error('Failed to load existing comments:', error);
   }
@@ -256,7 +276,9 @@ document.addEventListener('click', (e) => {
   const target = e.target;
   if (target.closest('#commentsync-widget') ||
       target.closest('.commentsync-pin') ||
-      target.closest('.commentsync-thread-viewer')) {
+      target.closest('.commentsync-thread-viewer') ||
+      target.closest('#commentsync-fab') ||
+      target.closest('#commentsync-panel')) {
     console.log('🚫 CommentSync: Clicked on CommentSync UI element, ignoring');
     return;
   }
@@ -803,7 +825,7 @@ function showFAB() {
   `;
 
   const updateBadge = () => {
-    const count = existingThreads.length;
+    const count = allAppThreads.length;
     fabButton.innerHTML = count > 0 ? `<div style="position: relative;">\u{1F4AC}<div style="position: absolute; top: -8px; right: -8px; background: #EF4444; color: white; border-radius: 10px; padding: 2px 6px; font-size: 11px; min-width: 18px; text-align: center;">${count}</div></div>` : '\u{1F4AC}';
   };
 
@@ -880,26 +902,45 @@ function showCommentsPanel() {
 function renderCommentsPanelContent() {
   if (!commentsPanel) return;
 
-  const count = existingThreads.length;
+  const filteredThreads = showResolvedComments
+    ? allAppThreads
+    : allAppThreads.filter(t => t.status !== 'resolved');
+
+  const openCount = allAppThreads.filter(t => t.status !== 'resolved').length;
+  const resolvedCount = allAppThreads.filter(t => t.status === 'resolved').length;
+  const currentPageCount = existingThreads.length;
+  const totalCount = allAppThreads.length;
 
   commentsPanel.innerHTML = `
     <div style="padding: 20px; border-bottom: 1px solid #e5e7eb; background: #3B82F6; color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h2 style="margin: 0; font-size: 18px; font-weight: 600;">Comments</h2>
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600;">All Comments</h2>
         <button id="commentsync-panel-close" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center;">×</button>
       </div>
-      <div style="font-size: 14px; opacity: 0.9;">${count} comment${count !== 1 ? 's' : ''} on this page</div>
+      <div style="font-size: 13px; opacity: 0.9;">${totalCount} total · ${openCount} open · ${resolvedCount} resolved</div>
+      <div style="font-size: 12px; opacity: 0.75; margin-top: 4px;">${currentPageCount} on this page</div>
+    </div>
+
+    <div style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background: #f9fafb;">
+      <div style="display: flex; gap: 8px;">
+        <button id="commentsync-filter-all" style="flex: 1; padding: 8px 12px; border: ${showResolvedComments ? '2px solid #3B82F6' : '1px solid #e5e7eb'}; background: ${showResolvedComments ? '#EFF6FF' : 'white'}; color: ${showResolvedComments ? '#3B82F6' : '#64748b'}; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s;">
+          All (${totalCount})
+        </button>
+        <button id="commentsync-filter-open" style="flex: 1; padding: 8px 12px; border: ${!showResolvedComments ? '2px solid #3B82F6' : '1px solid #e5e7eb'}; background: ${!showResolvedComments ? '#EFF6FF' : 'white'}; color: ${!showResolvedComments ? '#3B82F6' : '#64748b'}; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s;">
+          Open (${openCount})
+        </button>
+      </div>
     </div>
 
     <div style="flex: 1; overflow-y: auto; padding: 16px;" id="commentsync-threads-container">
-      ${count === 0 ?
+      ${filteredThreads.length === 0 ?
         `<div style="text-align: center; padding: 40px 20px; color: #94a3b8;">
           <div style="font-size: 48px; margin-bottom: 16px;">\u{1F4AC}</div>
           <div style="font-size: 16px; font-weight: 500; margin-bottom: 8px;">No comments yet</div>
           <div style="font-size: 14px;">Click on any element to add feedback</div>
         </div>`
         :
-        existingThreads.map(thread => createThreadCard(thread)).join('')
+        filteredThreads.map(thread => createThreadCard(thread)).join('')
       }
     </div>
 
@@ -913,7 +954,17 @@ function renderCommentsPanelContent() {
   commentsPanel.querySelector('#commentsync-panel-close').addEventListener('click', hideCommentsPanel);
   commentsPanel.querySelector('#commentsync-stop-recording').addEventListener('click', handleStopFromPanel);
 
-  existingThreads.forEach((thread, index) => {
+  commentsPanel.querySelector('#commentsync-filter-all').addEventListener('click', () => {
+    showResolvedComments = true;
+    renderCommentsPanelContent();
+  });
+
+  commentsPanel.querySelector('#commentsync-filter-open').addEventListener('click', () => {
+    showResolvedComments = false;
+    renderCommentsPanelContent();
+  });
+
+  filteredThreads.forEach((thread) => {
     const card = commentsPanel.querySelector(`[data-thread-id="${thread.id}"]`);
     if (card) {
       card.addEventListener('click', () => scrollToThread(thread));
@@ -932,8 +983,24 @@ function createThreadCard(thread) {
     minute: '2-digit'
   });
 
+  const isCurrentPage = thread.page_url === window.location.href;
+  let pageDisplay = '';
+
+  if (!isCurrentPage && thread.page_url) {
+    try {
+      const url = new URL(thread.page_url);
+      const pathname = url.pathname === '/' ? 'Home' : url.pathname.split('/').filter(Boolean).pop() || 'Page';
+      pageDisplay = `<div style="color: #64748b; font-size: 11px; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+        <span>\u{1F517}</span>
+        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${pathname}</span>
+      </div>`;
+    } catch (e) {
+      pageDisplay = '';
+    }
+  }
+
   return `
-    <div data-thread-id="${thread.id}" style="
+    <div data-thread-id="${thread.id}" data-page-url="${thread.page_url || ''}" style="
       background: white;
       border: 1px solid #e5e7eb;
       border-radius: 8px;
@@ -941,6 +1008,7 @@ function createThreadCard(thread) {
       margin-bottom: 12px;
       cursor: pointer;
       transition: all 0.2s;
+      ${!isCurrentPage ? 'opacity: 0.85;' : ''}
     " onmouseenter="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'; this.style.borderColor='#3B82F6';" onmouseleave="this.style.boxShadow='none'; this.style.borderColor='#e5e7eb';">
       <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
         <span style="
@@ -954,6 +1022,7 @@ function createThreadCard(thread) {
         ">${status}</span>
         <span style="color: #64748b; font-size: 12px;">${createdAt}</span>
       </div>
+      ${pageDisplay}
       <div style="color: #1e293b; font-size: 13px; line-height: 1.5; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
         ${firstComment}
       </div>
@@ -965,10 +1034,19 @@ function createThreadCard(thread) {
 }
 
 function scrollToThread(thread) {
+  const isCurrentPage = thread.page_url === window.location.href;
+
+  if (!isCurrentPage) {
+    if (confirm(`This comment is on a different page. Navigate to that page?\n\n${thread.page_url}`)) {
+      window.location.href = thread.page_url;
+    }
+    return;
+  }
+
   hideCommentsPanel();
 
-  const pin = document.querySelector(`[data-thread-id="${thread.id}"]`);
-  if (pin && pin.classList.contains('commentsync-pin')) {
+  const pin = document.querySelector(`.commentsync-pin[data-thread-id="${thread.id}"]`);
+  if (pin) {
     pin.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     pin.style.animation = 'pulse 0.5s ease-in-out 3';
@@ -984,6 +1062,8 @@ function scrollToThread(thread) {
     setTimeout(() => {
       pin.click();
     }, 1000);
+  } else {
+    showNotification('Comment pin not found on this page', 'error');
   }
 }
 
@@ -1013,7 +1093,7 @@ function refreshCommentsPanel() {
   }
 
   if (fabButton) {
-    const count = existingThreads.length;
+    const count = allAppThreads.length;
     fabButton.innerHTML = count > 0 ? `<div style="position: relative;">\u{1F4AC}<div style="position: absolute; top: -8px; right: -8px; background: #EF4444; color: white; border-radius: 10px; padding: 2px 6px; font-size: 11px; min-width: 18px; text-align: center;">${count}</div></div>` : '\u{1F4AC}';
   }
 }
