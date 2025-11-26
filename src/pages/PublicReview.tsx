@@ -243,6 +243,54 @@ export function PublicReview() {
     setNewCommentPosition(null);
   };
 
+  const jumpToElement = (selector: string) => {
+    if (!iframeRef.current) return;
+
+    const iframeDoc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
+    if (!iframeDoc) return;
+
+    try {
+      const element = iframeDoc.querySelector(selector);
+      if (!element) {
+        alert('Element not found on page. The page structure may have changed.');
+        return;
+      }
+
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      const existingHighlight = iframeDoc.querySelector('.commentsync-highlight');
+      if (existingHighlight) existingHighlight.remove();
+
+      const highlight = iframeDoc.createElement('div');
+      highlight.className = 'commentsync-highlight';
+      highlight.style.cssText = `
+        position: absolute;
+        border: 3px solid #3B82F6;
+        background: rgba(59, 130, 246, 0.2);
+        pointer-events: none;
+        z-index: 999999;
+        border-radius: 8px;
+        animation: pulse 2s ease-in-out infinite;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
+      `;
+
+      const rect = element.getBoundingClientRect();
+      highlight.style.left = `${rect.left + iframeDoc.defaultView!.scrollX}px`;
+      highlight.style.top = `${rect.top + iframeDoc.defaultView!.scrollY}px`;
+      highlight.style.width = `${rect.width}px`;
+      highlight.style.height = `${rect.height}px`;
+
+      iframeDoc.body.appendChild(highlight);
+
+      setTimeout(() => {
+        highlight.remove();
+      }, 4000);
+    } catch (error) {
+      console.error('Failed to jump to element:', error);
+      alert('Unable to highlight element. The page may have security restrictions.');
+    }
+  };
+
   const closeCommentOverlay = () => {
     setShowCommentOverlay(false);
     setCommentMode('off');
@@ -681,6 +729,8 @@ export function PublicReview() {
                   if (!thread) return null;
                   const isSelected = selectedThread?.id === thread.id && showCommentOverlay;
 
+                  if (isSelected) return null;
+
                   return (
                     <button
                       key={pin.threadId}
@@ -689,9 +739,7 @@ export function PublicReview() {
                         handleThreadClick(thread);
                       }}
                       className={`absolute w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg transition-all hover:scale-110 pointer-events-auto z-50 ${
-                        isSelected
-                          ? 'bg-blue-600 scale-110 ring-4 ring-blue-300'
-                          : thread.status === 'resolved'
+                        thread.status === 'resolved'
                           ? 'bg-green-500 hover:bg-green-600'
                           : 'bg-amber-500 hover:bg-amber-600'
                       }`}
@@ -756,9 +804,26 @@ export function PublicReview() {
                               {newCommentPosition ? 'New Comment' : 'Comment Thread'}
                             </h3>
                             {selectedThread && (
-                              <p className="text-xs text-slate-400 truncate max-w-md">
-                                {selectedThread.page_url}
-                              </p>
+                              <>
+                                <p className="text-xs text-slate-400 truncate max-w-md">
+                                  {selectedThread.page_url}
+                                </p>
+                                {selectedThread.dom_selector?.selector && (
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <p className="text-xs text-purple-400 truncate max-w-xs font-mono">
+                                      📍 {selectedThread.dom_selector.selector}
+                                    </p>
+                                    <button
+                                      onClick={() => jumpToElement(selectedThread.dom_selector.selector)}
+                                      className="text-xs px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded flex items-center gap-1 transition flex-shrink-0"
+                                      title="Highlight element in page"
+                                    >
+                                      <Target className="w-3 h-3" />
+                                      Jump
+                                    </button>
+                                  </div>
+                                )}
+                              </>
                             )}
                             {selectedElement && newCommentPosition && (
                               <p className="text-xs text-purple-400 truncate max-w-md font-mono mt-1">
