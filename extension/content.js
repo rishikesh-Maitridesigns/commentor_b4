@@ -1,5 +1,3 @@
-import { SUPABASE_CONFIG } from './supabase.config.js';
-
 let isCommentSyncActive = false;
 let selectedElement = null;
 let commentWidget = null;
@@ -10,15 +8,18 @@ let activeSession = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SESSION_ACTIVE') {
+    console.log('✅ CommentSync: Session activated', message.session);
     activeSession = message.session;
     isCommentSyncActive = true;
     loadExistingComments();
     document.body.style.cursor = 'crosshair';
+    console.log('✅ CommentSync: Ready to capture feedback - click any element');
     sendResponse({ success: true });
     return true;
   }
 
   if (message.type === 'SESSION_STOPPED') {
+    console.log('🛑 CommentSync: Session stopped');
     isCommentSyncActive = false;
     activeSession = null;
     clearAllPins();
@@ -206,17 +207,41 @@ document.addEventListener('mouseover', (e) => {
 });
 
 document.addEventListener('click', (e) => {
-  if (!isCommentSyncActive || commentWidget) return;
+  console.log('👆 CommentSync: Click detected', {
+    isActive: isCommentSyncActive,
+    hasWidget: !!commentWidget,
+    target: e.target.tagName,
+    targetClasses: e.target.className
+  });
+
+  if (!isCommentSyncActive) {
+    console.log('⚠️ CommentSync: Session not active - start recording first');
+    return;
+  }
+
+  if (commentWidget) {
+    console.log('📋 CommentSync: Widget already open');
+    return;
+  }
 
   const target = e.target;
   if (target.closest('#commentsync-widget') ||
       target.closest('.commentsync-pin') ||
       target.closest('.commentsync-thread-viewer')) {
+    console.log('🚫 CommentSync: Clicked on CommentSync UI element, ignoring');
     return;
   }
 
   e.preventDefault();
   e.stopPropagation();
+
+  const selector = getOptimalSelector(target);
+  console.log('✅ CommentSync: Element selected', {
+    tag: target.tagName,
+    id: target.id,
+    classes: target.className,
+    selector: selector
+  });
 
   showCommentWidget(target, e.pageX, e.pageY);
 }, true);

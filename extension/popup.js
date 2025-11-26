@@ -1,5 +1,3 @@
-import { SUPABASE_CONFIG } from './supabase.config.js';
-
 const SUPABASE_URL = SUPABASE_CONFIG.url;
 const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
 

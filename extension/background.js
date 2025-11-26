@@ -1,13 +1,37 @@
-import { SUPABASE_CONFIG } from './supabase.config.js';
-
 let activeSession = null;
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('CommentSync extension installed');
 });
 
+chrome.runtime.onStartup.addListener(async () => {
+  console.log('🚀 CommentSync: Extension startup');
+  const stored = await chrome.storage.local.get('activeSession');
+  if (stored.activeSession) {
+    activeSession = stored.activeSession;
+    console.log('✅ Restored active session from storage', activeSession);
+  }
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && activeSession && activeSession.tabId === tabId) {
+    console.log('🔄 CommentSync: Tab reloaded, re-activating session');
+    chrome.tabs.sendMessage(tabId, {
+      type: 'SESSION_ACTIVE',
+      session: activeSession
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.warn('⚠️ Could not re-activate session:', chrome.runtime.lastError.message);
+      } else {
+        console.log('✅ Session re-activated after page load');
+      }
+    });
+  }
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_SESSION') {
+    console.log('🎬 CommentSync Background: Starting session', message);
     activeSession = {
       appId: message.appId,
       userId: message.userId,
@@ -19,9 +43,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.sendMessage(message.tabId, {
       type: 'SESSION_ACTIVE',
       session: activeSession
-    }, () => {
+    }, (response) => {
       if (chrome.runtime.lastError) {
-        console.log('Content script not ready yet, will activate on page load');
+        console.warn('⚠️ Content script not ready yet:', chrome.runtime.lastError.message);
+      } else {
+        console.log('✅ Session activated in tab', message.tabId);
       }
     });
 
@@ -52,9 +78,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'SAVE_COMMENT') {
+    console.log('💾 CommentSync Background: Saving comment', message.data);
     handleSaveComment(message.data, sender.tab)
-      .then(() => sendResponse({ success: true }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+      .then(() => {
+        console.log('✅ Comment saved successfully');
+        sendResponse({ success: true });
+      })
+      .catch(error => {
+        console.error('❌ Failed to save comment:', error);
+        sendResponse({ success: false, error: error.message });
+      });
     return true;
   }
 
