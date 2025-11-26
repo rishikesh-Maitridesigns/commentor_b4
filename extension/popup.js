@@ -20,6 +20,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('password').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleLogin();
   });
+
+  chrome.tabs.onActivated.addListener(() => {
+    checkIfOnCorrectPage();
+  });
+
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete') {
+      checkIfOnCorrectPage();
+    }
+  });
 });
 
 async function checkAuthStatus() {
@@ -129,7 +139,8 @@ async function loadApps() {
     apps.forEach(app => {
       const option = document.createElement('option');
       option.value = app.id;
-      option.textContent = app.name;
+      const domain = extractDomain(app.base_url);
+      option.textContent = `${app.name} (${domain || app.base_url})`;
       option.dataset.baseUrl = app.base_url;
       select.appendChild(option);
     });
@@ -155,6 +166,15 @@ async function handleAppSelect(event) {
   }
 }
 
+function extractDomain(url) {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function checkIfOnCorrectPage() {
   const appId = document.getElementById('app-select').value;
   if (!appId) return;
@@ -165,13 +185,31 @@ async function checkIfOnCorrectPage() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const gotoBtn = document.getElementById('goto-page-btn');
   const recordingControls = document.getElementById('recording-controls');
+  const domainWarning = document.getElementById('domain-warning');
 
-  if (tab && tab.url.startsWith(app.base_url)) {
+  if (!tab || !tab.url) {
+    gotoBtn.classList.remove('hidden');
+    recordingControls.classList.add('hidden');
+    domainWarning.classList.add('hidden');
+    return;
+  }
+
+  const currentDomain = extractDomain(tab.url);
+  const appDomain = extractDomain(app.base_url);
+
+  if (currentDomain && appDomain && currentDomain === appDomain) {
     gotoBtn.classList.add('hidden');
     recordingControls.classList.remove('hidden');
+    domainWarning.classList.add('hidden');
   } else {
     gotoBtn.classList.remove('hidden');
     recordingControls.classList.add('hidden');
+    if (currentDomain && appDomain) {
+      domainWarning.textContent = `⚠️ Wrong domain! This app is for ${appDomain}, but you're on ${currentDomain}`;
+      domainWarning.classList.remove('hidden');
+    } else {
+      domainWarning.classList.add('hidden');
+    }
   }
 }
 
@@ -201,15 +239,30 @@ async function handleStartRecording() {
     return;
   }
 
-  const result = await chrome.storage.local.get('userId');
+  const app = apps.find(a => a.id === appId);
+  if (!app) {
+    showError('App not found');
+    return;
+  }
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  const currentDomain = extractDomain(tab.url);
+  const appDomain = extractDomain(app.base_url);
+
+  if (!currentDomain || !appDomain || currentDomain !== appDomain) {
+    showError(`Cannot start recording on ${currentDomain || 'this page'}. This app is configured for ${appDomain || app.base_url}. Please use "Go to Page" button.`);
+    return;
+  }
+
+  const result = await chrome.storage.local.get('userId');
 
   chrome.runtime.sendMessage({
     type: 'START_SESSION',
     appId: appId,
     userId: result.userId,
-    tabId: tab.id
+    tabId: tab.id,
+    appDomain: appDomain
   }, (response) => {
     if (chrome.runtime.lastError) {
       console.error('Error starting session:', chrome.runtime.lastError);

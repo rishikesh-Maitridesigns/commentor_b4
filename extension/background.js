@@ -36,7 +36,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       appId: message.appId,
       userId: message.userId,
       startTime: Date.now(),
-      tabId: message.tabId
+      tabId: message.tabId,
+      appDomain: message.appDomain
     };
     chrome.storage.local.set({ activeSession });
 

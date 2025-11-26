@@ -6,9 +6,31 @@ let existingThreads = [];
 let commentPins = [];
 let activeSession = null;
 
+function getCurrentDomain() {
+  try {
+    return new URL(window.location.href).hostname;
+  } catch (e) {
+    return null;
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SESSION_ACTIVE') {
     console.log('✅ CommentSync: Session activated', message.session);
+
+    const currentDomain = getCurrentDomain();
+    const sessionDomain = message.session.appDomain;
+
+    if (currentDomain && sessionDomain && currentDomain !== sessionDomain) {
+      console.error('❌ CommentSync: Domain mismatch!', {
+        current: currentDomain,
+        expected: sessionDomain
+      });
+      alert(`⚠️ Cannot record on ${currentDomain}.\n\nThis app is configured for ${sessionDomain}.\n\nPlease navigate to ${sessionDomain} or select a different app.`);
+      sendResponse({ success: false, error: 'Domain mismatch' });
+      return true;
+    }
+
     activeSession = message.session;
     isCommentSyncActive = true;
     loadExistingComments();
