@@ -5,6 +5,9 @@ let highlightOverlay = null;
 let existingThreads = [];
 let commentPins = [];
 let activeSession = null;
+let commentsPanelOpen = false;
+let commentsPanel = null;
+let fabButton = null;
 
 function getCurrentDomain() {
   try {
@@ -34,6 +37,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     activeSession = message.session;
     isCommentSyncActive = true;
     loadExistingComments();
+    showFAB();
     document.body.style.cursor = 'crosshair';
     console.log('✅ CommentSync: Ready to capture feedback - click any element');
     sendResponse({ success: true });
@@ -45,6 +49,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     isCommentSyncActive = false;
     activeSession = null;
     clearAllPins();
+    hideFAB();
+    hideCommentsPanel();
     document.body.style.cursor = '';
     sendResponse({ success: true });
     return true;
@@ -72,6 +78,7 @@ async function loadExistingComments() {
     if (threadsResponse.ok) {
       existingThreads = await threadsResponse.json();
       displayCommentPins();
+      refreshCommentsPanel();
     }
   } catch (error) {
     console.error('Failed to load existing comments:', error);
@@ -275,11 +282,33 @@ function showCommentWidget(element, x, y) {
 
   const widget = document.createElement('div');
   widget.id = 'commentsync-widget';
+
+  const widgetWidth = 320;
+  const widgetHeight = 220;
+  const padding = 16;
+
+  let finalX = x + padding;
+  let finalY = y + padding;
+
+  if (finalX + widgetWidth > window.innerWidth) {
+    finalX = window.innerWidth - widgetWidth - padding;
+  }
+  if (finalX < padding) {
+    finalX = padding;
+  }
+
+  if (finalY + widgetHeight > window.innerHeight + window.scrollY) {
+    finalY = y - widgetHeight - padding;
+    if (finalY < window.scrollY + padding) {
+      finalY = window.scrollY + padding;
+    }
+  }
+
   widget.style.cssText = `
     position: absolute;
-    top: ${y}px;
-    left: ${x}px;
-    width: 320px;
+    top: ${finalY}px;
+    left: ${finalX}px;
+    width: ${widgetWidth}px;
     background: white;
     border-radius: 12px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
@@ -292,9 +321,6 @@ function showCommentWidget(element, x, y) {
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
       <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #1e293b;">Add Comment</h3>
       <button id="commentsync-close" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0; width: 24px; height: 24px;">×</button>
-    </div>
-    <div style="margin-bottom: 8px; padding: 8px; background: #f1f5f9; border-radius: 6px; font-size: 11px; color: #475569; word-break: break-all;">
-      ${getOptimalSelector(element)}
     </div>
     <textarea id="commentsync-textarea"
       placeholder="Describe the issue or feedback..."
@@ -376,47 +402,38 @@ async function submitComment(element, text) {
   const rect = element.getBoundingClientRect();
 
   try {
-    chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, async (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('❌ Extension context error:', chrome.runtime.lastError);
-        showNotification('Extension was reloaded. Please refresh the page and try again.', 'error');
-        return;
-      }
+    const commentData = {
+      domSelector: getOptimalSelector(element),
+      text: text.trim(),
+      x: rect.left + window.scrollX,
+      y: rect.top + window.scrollY,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      screenshot: null,
+      htmlSnapshot: null,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight
+    };
 
-      const htmlSnapshot = captureHTMLSnapshot();
-
-      const commentData = {
-        domSelector: getOptimalSelector(element),
-        text: text.trim(),
-        x: rect.left + window.scrollX,
-        y: rect.top + window.scrollY,
-        scrollX: window.scrollX,
-        scrollY: window.scrollY,
-        screenshot: response.screenshot,
-        htmlSnapshot: htmlSnapshot,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight
-      };
-
-      chrome.runtime.sendMessage(
-        { type: 'SAVE_COMMENT', data: commentData },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            console.error('❌ Extension context error:', chrome.runtime.lastError);
-            showNotification('Extension was reloaded. Please refresh the page and try again.', 'error');
-            return;
-          }
-
-          if (response.success) {
-            showNotification('Comment saved successfully!', 'success');
-            closeWidget();
-            loadExistingComments();
-          } else {
-            showNotification('Failed to save comment: ' + response.error, 'error');
-          }
+    chrome.runtime.sendMessage(
+      { type: 'SAVE_COMMENT', data: commentData },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('❌ Extension context error:', chrome.runtime.lastError);
+          showNotification('Extension was reloaded. Please refresh the page and try again.', 'error');
+          return;
         }
-      );
-    });
+
+        if (response.success) {
+          showNotification('Comment saved successfully!', 'success');
+          closeWidget();
+          loadExistingComments();
+          refreshCommentsPanel();
+        } else {
+          showNotification('Failed to save comment: ' + response.error, 'error');
+        }
+      }
+    );
   } catch (error) {
     console.error('❌ Error submitting comment:', error);
     showNotification('Failed to save comment. Please refresh the page and try again.', 'error');
@@ -756,4 +773,261 @@ function showNotification(message, type) {
     notification.style.transition = 'opacity 0.3s';
     setTimeout(() => notification.remove(), 300);
   }, 3000);
+}
+
+function showFAB() {
+  if (fabButton) return;
+
+  fabButton = document.createElement('button');
+  fabButton.id = 'commentsync-fab';
+  fabButton.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 56px;
+    height: 56px;
+    background: #3B82F6;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    cursor: pointer;
+    z-index: 999996;
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-weight: bold;
+  `;
+
+  const updateBadge = () => {
+    const count = existingThreads.length;
+    fabButton.innerHTML = count > 0 ? `<div style="position: relative;">\u{1F4AC}<div style="position: absolute; top: -8px; right: -8px; background: #EF4444; color: white; border-radius: 10px; padding: 2px 6px; font-size: 11px; min-width: 18px; text-align: center;">${count}</div></div>` : '\u{1F4AC}';
+  };
+
+  updateBadge();
+
+  fabButton.addEventListener('mouseenter', () => {
+    fabButton.style.transform = 'scale(1.1)';
+    fabButton.style.boxShadow = '0 6px 20px rgba(59, 130, 246, 0.5)';
+  });
+
+  fabButton.addEventListener('mouseleave', () => {
+    fabButton.style.transform = 'scale(1)';
+    fabButton.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.4)';
+  });
+
+  fabButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleCommentsPanel();
+  });
+
+  document.body.appendChild(fabButton);
+}
+
+function hideFAB() {
+  if (fabButton) {
+    fabButton.remove();
+    fabButton = null;
+  }
+}
+
+function toggleCommentsPanel() {
+  if (commentsPanelOpen) {
+    hideCommentsPanel();
+  } else {
+    showCommentsPanel();
+  }
+}
+
+function showCommentsPanel() {
+  if (commentsPanel) return;
+
+  commentsPanelOpen = true;
+
+  commentsPanel = document.createElement('div');
+  commentsPanel.id = 'commentsync-panel';
+  commentsPanel.style.cssText = `
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 400px;
+    height: 100vh;
+    background: white;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+    z-index: 999998;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    animation: slideIn 0.3s ease-out;
+  `;
+
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  renderCommentsPanelContent();
+  document.body.appendChild(commentsPanel);
+}
+
+function renderCommentsPanelContent() {
+  if (!commentsPanel) return;
+
+  const count = existingThreads.length;
+
+  commentsPanel.innerHTML = `
+    <div style="padding: 20px; border-bottom: 1px solid #e5e7eb; background: #3B82F6; color: white;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600;">Comments</h2>
+        <button id="commentsync-panel-close" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center;">×</button>
+      </div>
+      <div style="font-size: 14px; opacity: 0.9;">${count} comment${count !== 1 ? 's' : ''} on this page</div>
+    </div>
+
+    <div style="flex: 1; overflow-y: auto; padding: 16px;" id="commentsync-threads-container">
+      ${count === 0 ?
+        `<div style="text-align: center; padding: 40px 20px; color: #94a3b8;">
+          <div style="font-size: 48px; margin-bottom: 16px;">\u{1F4AC}</div>
+          <div style="font-size: 16px; font-weight: 500; margin-bottom: 8px;">No comments yet</div>
+          <div style="font-size: 14px;">Click on any element to add feedback</div>
+        </div>`
+        :
+        existingThreads.map(thread => createThreadCard(thread)).join('')
+      }
+    </div>
+
+    <div style="padding: 16px; border-top: 1px solid #e5e7eb; background: #f9fafb;">
+      <button id="commentsync-stop-recording" style="width: 100%; background: #EF4444; color: white; border: none; padding: 12px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s;">
+        Stop Recording
+      </button>
+    </div>
+  `;
+
+  commentsPanel.querySelector('#commentsync-panel-close').addEventListener('click', hideCommentsPanel);
+  commentsPanel.querySelector('#commentsync-stop-recording').addEventListener('click', handleStopFromPanel);
+
+  existingThreads.forEach((thread, index) => {
+    const card = commentsPanel.querySelector(`[data-thread-id="${thread.id}"]`);
+    if (card) {
+      card.addEventListener('click', () => scrollToThread(thread));
+    }
+  });
+}
+
+function createThreadCard(thread) {
+  const status = thread.status || 'open';
+  const commentCount = thread.comments?.length || 0;
+  const firstComment = thread.comments?.[0]?.text || 'No comment text';
+  const createdAt = new Date(thread.created_at).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  return `
+    <div data-thread-id="${thread.id}" style="
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    " onmouseenter="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'; this.style.borderColor='#3B82F6';" onmouseleave="this.style.boxShadow='none'; this.style.borderColor='#e5e7eb';">
+      <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+        <span style="
+          background: ${status === 'resolved' ? '#10B981' : '#3B82F6'};
+          color: white;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 11px;
+          font-weight: 500;
+          text-transform: uppercase;
+        ">${status}</span>
+        <span style="color: #64748b; font-size: 12px;">${createdAt}</span>
+      </div>
+      <div style="color: #1e293b; font-size: 13px; line-height: 1.5; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+        ${firstComment}
+      </div>
+      <div style="color: #64748b; font-size: 12px;">
+        \u{1F4AC} ${commentCount} comment${commentCount !== 1 ? 's' : ''}
+      </div>
+    </div>
+  `;
+}
+
+function scrollToThread(thread) {
+  hideCommentsPanel();
+
+  const pin = document.querySelector(`[data-thread-id="${thread.id}"]`);
+  if (pin && pin.classList.contains('commentsync-pin')) {
+    pin.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    pin.style.animation = 'pulse 0.5s ease-in-out 3';
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.3); }
+      }
+    `;
+    document.head.appendChild(style);
+
+    setTimeout(() => {
+      pin.click();
+    }, 1000);
+  }
+}
+
+function hideCommentsPanel() {
+  if (commentsPanel) {
+    commentsPanel.style.animation = 'slideOut 0.3s ease-in';
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes slideOut {
+        from { transform: translateX(0); }
+        to { transform: translateX(100%); }
+      }
+    `;
+    document.head.appendChild(style);
+
+    setTimeout(() => {
+      commentsPanel.remove();
+      commentsPanel = null;
+      commentsPanelOpen = false;
+    }, 300);
+  }
+}
+
+function refreshCommentsPanel() {
+  if (commentsPanelOpen && commentsPanel) {
+    renderCommentsPanelContent();
+  }
+
+  if (fabButton) {
+    const count = existingThreads.length;
+    fabButton.innerHTML = count > 0 ? `<div style="position: relative;">\u{1F4AC}<div style="position: absolute; top: -8px; right: -8px; background: #EF4444; color: white; border-radius: 10px; padding: 2px 6px; font-size: 11px; min-width: 18px; text-align: center;">${count}</div></div>` : '\u{1F4AC}';
+  }
+}
+
+function handleStopFromPanel() {
+  if (confirm('Are you sure you want to stop recording feedback?')) {
+    chrome.runtime.sendMessage({ type: 'STOP_SESSION', tabId: null }, () => {
+      isCommentSyncActive = false;
+      activeSession = null;
+      clearAllPins();
+      hideFAB();
+      hideCommentsPanel();
+      document.body.style.cursor = '';
+      showNotification('Recording stopped', 'success');
+    });
+  }
 }
